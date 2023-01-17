@@ -16,20 +16,19 @@ interface Image {
   id: string;
 }
 
-type ResponseInterface = {
-  data: Image[];
+interface GetImagesResponse {
   after: string;
+  data: Image[];
 }
 
 export default function Home(): JSX.Element {
-
-  const getImages = async ({ pageParam = null }): Promise<ResponseInterface> => {
-    const response = await api.get('/api/images', {
+  async function fetchImages({ pageParam = null }): Promise<GetImagesResponse> {
+    const { data } = await api('/api/images', {
       params: {
-        after: pageParam
-      }
-    })
-    return response.data
+        after: pageParam,
+      },
+    });
+    return data;
   }
 
   const {
@@ -39,32 +38,37 @@ export default function Home(): JSX.Element {
     isFetchingNextPage,
     fetchNextPage,
     hasNextPage,
-  } = useInfiniteQuery(
-    'images',
-    getImages,
-    { getNextPageParam: (lastPage) => lastPage.after }
-  );
+  } = useInfiniteQuery('images', fetchImages, {
+    getNextPageParam: lastPage => lastPage?.after || null,
+  });
 
   const formattedData = useMemo(() => {
-    return data?.pages.flatMap(pageData => pageData.data).flat();
+    const formatted = data?.pages.flatMap(imageData => {
+      return imageData.data.flat();
+    });
+    return formatted;
   }, [data]);
 
-  if (isLoading) return <Loading />;
+  if (isLoading && !isError) {
+    return <Loading />;
+  }
 
-  if (isError) return <Error />;
+  if (!isLoading && isError) {
+    return <Error />;
+  }
 
   return (
     <>
       <Header />
 
-      <Box maxW={1120} px={20} mx="auto" my={20}>
+      <Box maxW={1120} px={[10, 15, 20]} mx="auto" my={[10, 15, 20]}>
         <CardList cards={formattedData} />
+
         {hasNextPage && (
-          <Button mt={8} onClick={() => fetchNextPage()}>
-            {isFetchingNextPage ? 'Carregando' : 'Carregar mais'}
+          <Button onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+            {isFetchingNextPage ? 'Carregando...' : 'Carregar mais'}
           </Button>
         )}
       </Box>
     </>
   );
-}

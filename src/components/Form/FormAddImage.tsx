@@ -6,15 +6,16 @@ import { useMutation, useQueryClient } from 'react-query';
 import { api } from '../../services/api';
 import { FileInput } from '../Input/FileInput';
 import { TextInput } from '../Input/TextInput';
-
-interface MutationProps {
-  title: string;
-  description: string;
-  url: string;
-}
+import { query } from 'faunadb';
 
 interface FormAddImageProps {
   closeModal: () => void;
+}
+
+interface NewImageData {
+  image: string;
+  title: string;
+  description: string;
 }
 
 export function FormAddImage({ closeModal }: FormAddImageProps): JSX.Element {
@@ -22,16 +23,19 @@ export function FormAddImage({ closeModal }: FormAddImageProps): JSX.Element {
   const [localImageUrl, setLocalImageUrl] = useState('');
   const toast = useToast();
 
+  const acceptedFormatsRegex =
+    /(?:([^:/?#]+):)?(?:([^/?#]*))?([^?#](?:jpeg|gif|png))(?:\?([^#]*))?(?:#(.*))?/g;
+
+
   const formValidations = {
     image: {
       required: 'Arquivo obrigatório',
       validate: {
-        lessThan10MB: files =>
-          files[0].size < 10485760 || 'O arquivo deve ser menor que 10MB',
-        acceptedFormats: files =>
-        ['image/jpeg', 'image/png', 'image/gif'].includes(
-          files[0]?.type
-          ) || 'Somente são aceitos arquivos PNG, JPEG e GIF',
+        lessThan10MB: fileList =>
+          fileList[0].size < 10000000 || 'O arquivo deve ser menor que 10MB',
+        acceptedFormats: fileList =>
+          acceptedFormatsRegex.test(fileList[0].type) ||
+          'Somente são aceitos arquivos PNG, JPEG e GIF',
       },
     },
     title: {
@@ -55,18 +59,17 @@ export function FormAddImage({ closeModal }: FormAddImageProps): JSX.Element {
   };
 
   const queryClient = useQueryClient();
-
   const mutation = useMutation(
-    async (formData: MutationProps) => {
-      const data = await api.post('/api/images', {
-        title: formData.title,
-        description: formData.description,
-        url: imageUrl
+    async (image: NewImageData) => {
+      await api.post('/api/images', {
+        ...image,
+        url: imageUrl,
       });
-      return data;
     },
     {
-      onSuccess: () => queryClient.invalidateQueries('images'),
+      onSuccess: () => {
+        queryClient.invalidateQueries('images');
+      },
     }
   );
 
@@ -74,38 +77,29 @@ export function FormAddImage({ closeModal }: FormAddImageProps): JSX.Element {
     useForm();
   const { errors } = formState;
 
-  const onSubmit = async (data): Promise<void> => {
+  const onSubmit = async (data: NewImageData): Promise<void> => {
     try {
       if (!imageUrl) {
         toast({
-          title: 'Imagem não adicionada',
-          description:
-            'É preciso adicionar e aguardar o upload de uma imagem antes de realizar o cadastro.',
           status: 'error',
-          duration: 3000,
-          isClosable: true,
-        });
-      }
+          title: "Imagem não adicionada",
+          description: 'É preciso adicionar e aguardar o upload de uma imagem antes de realizar o cadastro.',
+        })
 
-      const response = await mutation.mutateAsync(data);
-
-      if (response.status === 201) {
-        toast({
-          title: 'Imagem cadastrada',
-          description: 'Sua imagem foi cadastrada com sucesso.',
-          status: 'success',
-          duration: 3000,
-          isClosable: true,
-        });
+        return;
       }
-    } catch(error) {
-      console.log(error)
+      await mutation.mutateAsync(data);
+
+      toast({
+        title: 'Imagem cadastrada',
+        description: 'Sua imagem foi cadastrada com sucesso.',
+        status: 'success',
+      });
+    } catch {
       toast({
         title: 'Falha no cadastro',
         description: 'Ocorreu um erro ao tentar cadastrar a sua imagem.',
         status: 'error',
-        duration: 3000,
-        isClosable: true,
       });
     } finally {
       reset();
@@ -114,6 +108,7 @@ export function FormAddImage({ closeModal }: FormAddImageProps): JSX.Element {
       closeModal();
     }
   };
+
 
   return (
     <Box as="form" width="100%" onSubmit={handleSubmit(onSubmit)}>
